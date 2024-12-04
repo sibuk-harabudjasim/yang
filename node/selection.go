@@ -473,10 +473,60 @@ func (sel *Selection) UpdateInto(toNode Node) error {
 	return e.edit(sel, sel.Split(toNode), editUpdate)
 }
 
+// This function retrieves new Node from current, pointing to first child in JSON payload
+// This is needed because for RESTCONF PUT requests payload contains node name as top level node in JSON.
+// To properly handle tree modification, this top node have to be stripped.
+// (not sure that whis behavior is common to JSON and XML payloads and for NETCONF also)
+func traverseToChild(n Node, childMeta meta.Definition) (Node, error) {
+	defMeta, ok := childMeta.(meta.HasDataDefinitions)
+	if !ok {
+		return nil, fmt.Errorf("meta does not have definitions")
+	}
+	childNode, err := n.Child(ChildRequest{
+		Meta: defMeta,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("child err: %v", err)
+	}
+	return childNode, nil
+}
+
+// This function retrieves new Node from current, pointing to first child in JSON payload
+// This is needed because for RESTCONF PUT requests payload contains node name as top level node in JSON.
+// To properly handle tree modification, this top node have to be stripped.
+// (not sure that whis behavior is common to JSON and XML payloads and for NETCONF also)
+func traverseToList(n Node, childMeta meta.Definition, key []val.Value) (Node, error) {
+	listMeta, ok := childMeta.(*meta.List)
+	if !ok {
+		return nil, fmt.Errorf("meta is not list")
+	}
+	listNode, _, err := n.Next(ListRequest{
+		Key:   key,
+		Meta:  listMeta,
+		First: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("next err: %v", err)
+	}
+	return listNode, nil
+}
+
 // Replace current tree with given one
 func (sel *Selection) ReplaceFrom(fromNode Node) error {
+	// Expecting that payload in ReplaceFrom includes one extra root node that have to be stripped
+	var newFrom Node
+	var err error
+	if len(sel.Path.Key) == 0 {
+		newFrom, err = traverseToChild(fromNode, sel.Meta())
+	} else {
+		newFrom, err = traverseToList(fromNode, sel.Meta(), sel.Path.Key)
+	}
+	if err != nil {
+		return fmt.Errorf("replace-from error: %w", err)
+	}
 	e := editor{basePath: sel.Path}
-	return e.edit(sel.Split(fromNode), sel, editReplace)
+	sourceSel := sel.Split(newFrom)
+	return e.edit(sourceSel, sel, editReplace)
 }
 
 // Copy given node into current node.  There must be matching containers of list
