@@ -22,9 +22,6 @@ type reflectFieldHandler interface {
 }
 
 func newStructAsContainer(ref *Node, src reflect.Value) *structAsContainer {
-	if src.Kind() == reflect.Struct {
-		panic(fmt.Sprintf("struct %s not allowed, need pointer to struct", src.Type()))
-	}
 	return &structAsContainer{
 		ref:    ref,
 		src:    src,
@@ -280,7 +277,13 @@ func isErrType(v reflect.Value) bool {
 
 func (fdef *reflectByField) set(v reflect.Value) error {
 	if fdef.f.Name != "" {
-		fdef.elem().FieldByIndex(fdef.f.Index).Set(v)
+		fv := fdef.elem().FieldByIndex(fdef.f.Index)
+		// Dynamicly created structs are passed as pointers, 
+		// so they need be dereferenced if target type is not a pointer
+		if v.Kind() == reflect.Pointer && fv.Kind() != reflect.Pointer {
+			v = v.Elem()
+		}
+		fv.Set(v)
 		return nil
 	}
 	if fdef.setter.Name != "" {

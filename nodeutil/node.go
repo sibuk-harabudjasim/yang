@@ -490,7 +490,12 @@ func (ref *Node) DoNewChild(r node.ChildRequest) (node.Node, error) {
 		return ref.NewList(r.Meta, obj.Interface(), ref.onListUpdate(r.Meta.(*meta.List)))
 	}
 
-	return ref.New(r.Meta, obj.Interface())
+	// Since we can create values (structs) in place, "obj" is not pointing to object in tree,
+	// we need to locate it again
+	if ref.OnGetChild != nil {
+		return ref.OnGetChild(ref, r)
+	}
+	return ref.DoGetChild(r)
 }
 
 func (ref *Node) onListUpdate(m *meta.List) NodeListUpdate {
@@ -694,6 +699,9 @@ func (ref *Node) DoNewObject(t reflect.Type, m meta.Definition, insideList bool)
 	switch t.Kind() {
 	case reflect.Ptr:
 		return reflect.New(t.Elem()), nil
+	case reflect.Struct:
+		// Creating pointer, this way struct will be addressable
+		return reflect.New(t), nil
 	case reflect.Interface:
 		switch x := m.(type) {
 		case *meta.List:
@@ -720,7 +728,7 @@ func (ref *Node) DoNewObject(t reflect.Type, m meta.Definition, insideList bool)
 	case reflect.Slice:
 		return reflect.MakeSlice(t, 0, 0), nil
 	}
-	panic(fmt.Sprintf("creating type not supported %v", t))
+	return reflect.Value{}, fmt.Errorf("creating type not supported %v (Kind %v)", t, t.Kind())
 }
 
 type ReflectListComparator func(a, b reflect.Value) bool

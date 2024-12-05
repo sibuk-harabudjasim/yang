@@ -53,7 +53,7 @@ func TestStructAsContainer(t *testing.T) {
 	fc.RequireEqual(t, nil, err)
 	ref := &Node{}
 	x := newStructAsContainer(ref, reflect.ValueOf(app))
-	t.Run("child container", func(t *testing.T) {
+	t.Run("child container ptr", func(t *testing.T) {
 		c := meta.Find(m, "c").(meta.HasDataDefinitions)
 		n, err := x.newChild(c)
 		fc.RequireEqual(t, nil, err)
@@ -89,6 +89,22 @@ func TestStructAsContainer(t *testing.T) {
 		_, valid := n.Interface().(map[int]*reflectStructP)
 		fc.RequireEqual(t, true, valid)
 	})
+
+	t.Run("child container", func(t *testing.T) {
+		z := meta.Find(m, "z").(meta.HasDataDefinitions)
+		n, err := x.newChild(z)
+		fc.RequireEqual(t, nil, err)
+		fc.AssertEqual(t, false, n.IsNil())
+		newZ, valid := n.Interface().(*reflectStructZ) // newChild creates value in place but returns pointer to it
+		fc.AssertEqual(t, true, valid)
+		fc.AssertEqual(t, "", newZ.Zz)
+
+		h, err := x.getHandler(z)
+		fc.RequireEqual(t, nil, err)
+		err = h.set(reflect.ValueOf(&reflectStructZ{Zz: "zzz"}))
+		fc.AssertEqual(t, nil, err)
+		fc.AssertEqual(t, app.Z.Zz, "zzz")
+	})
 }
 
 func TestStructAsContainer2(t *testing.T) {
@@ -97,12 +113,17 @@ func TestStructAsContainer2(t *testing.T) {
 	fc.RequireEqual(t, nil, err)
 	b := node.NewBrowser(m, &Node{Object: app})
 
-	t.Run("replace container", func(t *testing.T) {
+	t.Run("upsert container", func(t *testing.T) {
 		n, _ := ReadJSON(`{"zz":"bye"}`)
 		sel(b.Root().Find("z")).UpsertFrom(n)
 		fc.AssertEqual(t, "bye", app.Z.Zz)
 	})
 
+	t.Run("replace container", func(t *testing.T) {
+		n, _ := ReadJSON(`{"z":{"zz":"bar"}}`)
+		sel(b.Root().Find("z")).ReplaceFrom(n)
+		fc.AssertEqual(t, "bar", app.Z.Zz)
+	})
 }
 
 func TestFindReflectByMethod(t *testing.T) {
@@ -179,10 +200,10 @@ type reflectStructTestApp struct {
 	P map[int]*reflectStructP
 	Q int
 	f string
-	Z relectStructZ
+	Z reflectStructZ
 }
 
-type relectStructZ struct {
+type reflectStructZ struct {
 	Zz string
 }
 
